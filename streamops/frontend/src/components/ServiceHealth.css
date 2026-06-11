@@ -1,0 +1,34 @@
+.service-health-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.card-title {
+  margin-bottom: 32px;
+}
+
+.service-list {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.service-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.service-name {
+  font-size: 16px;
+}
+
+.service-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.healthy-text {
+  color: var(--accent-green);
+}

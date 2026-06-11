@@ -1,0 +1,84 @@
+.telemetry-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: auto auto;
+  gap: 24px;
+}
+
+.grid-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.perf-list, .deploy-list, .load-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex: 1;
+}
+
+.perf-row, .deploy-row {
+  display: flex;
+  justify-content: space-between;
+}
+
+.perf-avg {
+  margin-top: 32px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  justify-content: flex-start;
+  gap: 16px;
+}
+
+.deploy-label {
+  color: var(--text-secondary);
+}
+
+.alert-text {
+  color: var(--accent-red);
+}
+
+/* Traffic Metrics specific */
+.traffic-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  flex: 1;
+}
+
+.metric-box {
+  background-color: var(--bg-color);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.success-box {
+  border: 1px solid var(--accent-green);
+  box-shadow: inset 0 0 16px var(--accent-green-dim);
+}
+
+.metric-value {
+  font-size: 24px;
+}
+
+/* Button */
+.run-test-btn {
+  margin-top: 24px;
+  background-color: var(--surface-hover);
+  color: var(--text-primary);
+  padding: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  transition: all 0.2s ease;
+}
+
+.run-test-btn:hover {
+  background-color: var(--accent-green);
+  color: var(--bg-color);
+}

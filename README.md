@@ -1,4 +1,4 @@
-# 🎮 StreamOps — DevOps Pipeline for Gaming & Live Streaming Platforms
+# 🎮 VibeSync — DevOps Pipeline for Gaming & Live Streaming Platforms
 
 [![CI/CD Pipeline](https://github.com/Soumitra-04/streamops/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/Soumitra-04/streamops/actions)
 [![Docker](https://img.shields.io/badge/Docker-Containerized-2496ED?logo=docker)](https://www.docker.com/)
