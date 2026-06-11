@@ -1,0 +1,113 @@
+version: "3.9"
+
+# ── Shared build args ─────────────────────────────────────────────────────────
+x-build-defaults: &build-defaults
+  args:
+    WORKERS: 2          # bump to 4 on production boxes
+
+# ── Shared healthcheck dependency policy ──────────────────────────────────────
+x-depends-db: &depends-db
+  db:
+    condition: service_healthy
+
+services:
+
+  # ── PostgreSQL ──────────────────────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER:     ${POSTGRES_USER:-streamops}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?DB password required}
+      POSTGRES_DB:       postgres             # default db; services use their own
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-streamops}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - streamops-net
+
+  # ── User Service (port 8003) ─────────────────────────────────────────────────
+  user-service:
+    build:
+      context: ./services/user-service
+      target: runtime          # skips the test stage in prod; use target: test locally
+      <<: *build-defaults
+    restart: unless-stopped
+    environment:
+      DATABASE_URL:  postgresql://${POSTGRES_USER:-streamops}:${POSTGRES_PASSWORD}@db:5432/userdb
+      SECRET_KEY:    ${SECRET_KEY:?JWT secret required}
+      PORT:          8003
+    ports:
+      - "8003:8003"
+    depends_on:
+      <<: *depends-db
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8003/health')\""]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - streamops-net
+
+  # ── Stream Service (port 8001) ───────────────────────────────────────────────
+  stream-service:
+    build:
+      context: ./services/stream-service
+      target: runtime
+      <<: *build-defaults
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-streamops}:${POSTGRES_PASSWORD}@db:5432/streamdb
+      PORT:         8001
+    ports:
+      - "8001:8001"
+    depends_on:
+      <<: *depends-db
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8001/health')\""]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - streamops-net
+
+  # ── Content Service (port 8002) ──────────────────────────────────────────────
+  content-service:
+    build:
+      context: ./services/content-service
+      target: runtime
+      <<: *build-defaults
+    restart: unless-stopped
+    environment:
+      DATABASE_URL:      postgresql://${POSTGRES_USER:-streamops}:${POSTGRES_PASSWORD}@db:5432/contentdb
+      STREAM_SERVICE_URL: http://stream-service:8001
+      PORT:              8002
+    ports:
+      - "8002:8002"
+    depends_on:
+      <<: *depends-db
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8002/health')\""]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - streamops-net
+
+volumes:
+  db_data:
+
+networks:
+  streamops-net:
+    driver: bridge
