@@ -1,0 +1,58 @@
+# =============================================================================
+# VibeSync — Prometheus Scrape Configuration
+# =============================================================================
+# Configures Prometheus to discover and scrape /metrics endpoints from
+# all three VibeSync backend services. Each service exposes Prometheus
+# metrics via prometheus-client (see routes.py in each service).
+#
+# Usage: Mount this ConfigMap into a Prometheus deployment at
+#        /etc/prometheus/prometheus.yml
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: vibesync
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/part-of: vibesync
+    app.kubernetes.io/component: monitoring
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+
+    scrape_configs:
+      # ── Stream Service Metrics ──
+      - job_name: "vibesync-stream-service"
+        metrics_path: /metrics
+        static_configs:
+          - targets: ["stream-service.vibesync.svc.cluster.local:8001"]
+            labels:
+              service: stream-service
+              environment: production
+
+      # ── User Service Metrics ──
+      - job_name: "vibesync-user-service"
+        metrics_path: /metrics
+        static_configs:
+          - targets: ["user-service.vibesync.svc.cluster.local:8003"]
+            labels:
+              service: user-service
+              environment: production
+
+      # ── Content Service Metrics ──
+      - job_name: "vibesync-content-service"
+        metrics_path: /metrics
+        static_configs:
+          - targets: ["content-service.vibesync.svc.cluster.local:8002"]
+            labels:
+              service: content-service
+              environment: production
+
+      # ── PostgreSQL Metrics (requires postgres-exporter sidecar) ──
+      # Uncomment when postgres-exporter is deployed:
+      # - job_name: "vibesync-postgres"
+      #   static_configs:
+      #     - targets: ["postgres.vibesync.svc.cluster.local:9187"]

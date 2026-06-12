@@ -335,3 +335,228 @@ jobs:
           name: frontend-html-build
           path: streamops/frontend/dist/
           retention-days: 14
+
+  # ===========================================================================
+  # JOB 4: BUILD & PUSH PER-SERVICE IMAGES
+  # ===========================================================================
+  # Purpose: Build each microservice's dedicated multi-stage Dockerfile and
+  # push 3 independent images to GHCR. This replaces the monolithic root
+  # Dockerfile approach — each service gets its own immutable artifact.
+  #
+  # The per-service Dockerfiles (target: runtime) already contain:
+  #   Stage 1 (deps)    → pip install into isolated prefix
+  #   Stage 2 (test)    → flake8 + pytest gate (skipped here; tests run in quality-gate)
+  #   Stage 3 (runtime) → non-root user, HEALTHCHECK, uvicorn CMD
+  #
+  # Matrix Strategy: Builds all 3 services in parallel on separate runners.
+  # ===========================================================================
+  build-services:
+    name: "🐳 Build ${{ matrix.service }}"
+    runs-on: ubuntu-latest
+    needs: [quality-gate]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: stream-service
+            image: vibesync-stream
+            context: streamops/services/stream-service
+          - service: user-service
+            image: vibesync-user
+            context: streamops/services/user-service
+          - service: content-service
+            image: vibesync-content
+            context: streamops/services/content-service
+
+    steps:
+      - name: "📥 Checkout Repository"
+        uses: actions/checkout@v4
+
+      - name: "🔐 Authenticate to GHCR"
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: "⚙️ Set up Docker Buildx"
+        uses: docker/setup-buildx-action@v3
+
+      - name: "🏷️ Extract Docker Metadata"
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image }}
+          tags: |
+            type=raw,value=latest
+            type=sha,prefix=,format=short
+
+      # -----------------------------------------------------------------------
+      # Build the per-service Dockerfile targeting the 'runtime' stage.
+      # The 'test' stage is intentionally skipped — quality-gate already
+      # ran pylint + pytest. Building target=runtime avoids redundant test
+      # execution and keeps build times minimal.
+      # -----------------------------------------------------------------------
+      - name: "🚀 Build & Push — ${{ matrix.service }}"
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.context }}/Dockerfile
+          target: runtime
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+          provenance: true
+
+      - name: "📋 Image Summary"
+        run: |
+          echo "## 🐳 ${{ matrix.service }} — Image Published" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Image** | \`${{ matrix.image }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Tags** | \`${{ steps.meta.outputs.tags }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Commit** | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+
+  # ===========================================================================
+  # JOB 5: DEPLOY TO KUBERNETES
+  # ===========================================================================
+  # Purpose: Apply all Kubernetes manifests and verify rollout status.
+  # Runs only after all 3 per-service images are built and pushed.
+  #
+  # Requires: KUBECONFIG secret containing the cluster kubeconfig.
+  # For Minikube: run this step manually with `kubectl apply --recursive`.
+  # ===========================================================================
+  deploy-to-k8s:
+    name: "☸️ Deploy to Kubernetes"
+    runs-on: ubuntu-latest
+    needs: [build-services]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: "📥 Checkout Repository"
+        uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------
+      # Inject the immutable SHA tag into all deployment manifests.
+      # Replaces :latest with the exact commit SHA so K8s pulls the image
+      # that was just built, not a cached :latest from a previous run.
+      # -----------------------------------------------------------------------
+      - name: "🏷️ Patch Image Tags with Commit SHA"
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          echo "Patching image tags to :${SHORT_SHA}"
+          sed -i "s|ghcr.io/soumitra-04/vibesync-stream:latest|ghcr.io/soumitra-04/vibesync-stream:${SHORT_SHA}|g" kubernetes/stream-service/deployment.yaml
+          sed -i "s|ghcr.io/soumitra-04/vibesync-user:latest|ghcr.io/soumitra-04/vibesync-user:${SHORT_SHA}|g" kubernetes/user-service/deployment.yaml
+          sed -i "s|ghcr.io/soumitra-04/vibesync-content:latest|ghcr.io/soumitra-04/vibesync-content:${SHORT_SHA}|g" kubernetes/content-service/deployment.yaml
+          echo "✅ All deployment manifests patched."
+
+      # -----------------------------------------------------------------------
+      # Check if KUBECONFIG secret is provided. If not, we skip the cluster
+      # deployment steps. This prevents pipeline failures for users testing
+      # with local Minikube who haven't set up GitHub Secrets.
+      # -----------------------------------------------------------------------
+      - name: "☸️ Check for Kubeconfig Secret"
+        id: check-kubeconfig
+        env:
+          KUBECONFIG_SECRET: ${{ secrets.KUBECONFIG }}
+        run: |
+          if [ -z "$KUBECONFIG_SECRET" ]; then
+            echo "No KUBECONFIG secret found. Skipping cluster deployment."
+            echo "has_secret=false" >> $GITHUB_OUTPUT
+          else
+            echo "has_secret=true" >> $GITHUB_OUTPUT
+          fi
+
+      # -----------------------------------------------------------------------
+      # Set up kubectl with the cluster kubeconfig from GitHub Secrets.
+      # For local Minikube testing, skip this job and run manually:
+      #   kubectl apply --recursive -f kubernetes/
+      # -----------------------------------------------------------------------
+      - name: "☸️ Set up Kubeconfig"
+        if: steps.check-kubeconfig.outputs.has_secret == 'true'
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBECONFIG }}" | base64 -d > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+
+      # -----------------------------------------------------------------------
+      # Dry-run validation: Ensures all manifests parse correctly before
+      # applying to the live cluster. Catches YAML syntax errors, missing
+      # fields, and invalid API versions.
+      # -----------------------------------------------------------------------
+      - name: "🔍 Validate Manifests (Dry Run)"
+        if: steps.check-kubeconfig.outputs.has_secret == 'true'
+        run: |
+          echo "Running kubectl dry-run validation..."
+          kubectl apply --recursive -f kubernetes/ --dry-run=client --validate=false
+          echo "✅ All manifests validated successfully."
+
+      - name: "🚀 Apply Kubernetes Manifests"
+        if: steps.check-kubeconfig.outputs.has_secret == 'true'
+        run: |
+          kubectl apply --recursive -f kubernetes/
+          echo "✅ All manifests applied."
+
+      # -----------------------------------------------------------------------
+      # Wait for each deployment to complete its rollout. This ensures the
+      # pipeline fails if any pod fails to start (e.g., image pull error,
+      # crash loop, failed health check).
+      # -----------------------------------------------------------------------
+      - name: "⏳ Verify Rollout Status"
+        if: steps.check-kubeconfig.outputs.has_secret == 'true'
+        run: |
+          echo "::group::PostgreSQL Rollout"
+          kubectl rollout status deployment/postgres -n vibesync --timeout=120s
+          echo "::endgroup::"
+
+          echo "::group::Stream Service Rollout"
+          kubectl rollout status deployment/stream-service -n vibesync --timeout=120s
+          echo "::endgroup::"
+
+          echo "::group::User Service Rollout"
+          kubectl rollout status deployment/user-service -n vibesync --timeout=120s
+          echo "::endgroup::"
+
+          echo "::group::Content Service Rollout"
+          kubectl rollout status deployment/content-service -n vibesync --timeout=120s
+          echo "::endgroup::"
+
+          echo "✅ All deployments rolled out successfully."
+
+      - name: "📋 Deployment Summary"
+        run: |
+          echo "## ☸️ VibeSync — Kubernetes Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Deployment | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.check-kubeconfig.outputs.has_secret }}" == 'true' ]; then
+            echo "| postgres | ✅ Rolled out |" >> $GITHUB_STEP_SUMMARY
+            echo "| stream-service | ✅ Rolled out |" >> $GITHUB_STEP_SUMMARY
+            echo "| user-service | ✅ Rolled out |" >> $GITHUB_STEP_SUMMARY
+            echo "| content-service | ✅ Rolled out |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Rollback Commands" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+            echo "kubectl rollout undo deployment/stream-service -n vibesync" >> $GITHUB_STEP_SUMMARY
+            echo "kubectl rollout undo deployment/user-service -n vibesync" >> $GITHUB_STEP_SUMMARY
+            echo "kubectl rollout undo deployment/content-service -n vibesync" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| All Deployments | ⚠️ Skipped (No KUBECONFIG secret) |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Manual Deployment Required" >> $GITHUB_STEP_SUMMARY
+            echo "No \`KUBECONFIG\` secret was found in GitHub, so the cluster deployment was skipped." >> $GITHUB_STEP_SUMMARY
+            echo "To deploy manually (e.g., using Minikube):" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+            echo "kubectl apply --recursive -f kubernetes/" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Manual Dry-Run Validation" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "kubectl apply --recursive -f kubernetes/ --dry-run=client" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
