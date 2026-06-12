@@ -1,0 +1,20 @@
+# =============================================================================
+# VibeSync — PostgreSQL Init Script ConfigMap
+# =============================================================================
+# Mirrors the docker-compose volume mount:
+#   ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+# Creates the 3 isolated databases on first PostgreSQL startup.
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init-sql
+  namespace: vibesync
+  labels:
+    app.kubernetes.io/part-of: vibesync
+    app.kubernetes.io/component: database
+data:
+  init-db.sql: |
+    CREATE DATABASE userdb;
+    CREATE DATABASE streamdb;
+    CREATE DATABASE contentdb;

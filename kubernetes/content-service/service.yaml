@@ -1,0 +1,21 @@
+# =============================================================================
+# VibeSync — Content Service ClusterIP Service
+# =============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: content-service
+  namespace: vibesync
+  labels:
+    app.kubernetes.io/name: content-service
+    app.kubernetes.io/part-of: vibesync
+    app.kubernetes.io/component: backend
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: content-service
+  ports:
+    - port: 8002
+      targetPort: 8002
+      protocol: TCP
+      name: http
