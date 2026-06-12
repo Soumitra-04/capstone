@@ -99,7 +99,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install --quiet -r requirements.txt
-          pip install --quiet pylint
+          pip install --quiet pylint pytest-html
 
       # -----------------------------------------------------------------------
       # STEP 4: STATIC ANALYSIS — Pylint
@@ -141,7 +141,7 @@ jobs:
       - name: "🧪 Pytest — Stream Service"
         working-directory: streamops/services/stream-service
         run: |
-          pytest tests/ -v --tb=short
+          pytest tests/ -v --tb=short --html=report.html --self-contained-html
           echo "✅ Stream Service — all tests passed."
 
       # -----------------------------------------------------------------------
@@ -151,7 +151,7 @@ jobs:
       - name: "🧪 Pytest — Content Service"
         working-directory: streamops/services/content-service
         run: |
-          pytest tests/ -v --tb=short
+          pytest tests/ -v --tb=short --html=report.html --self-contained-html
           echo "✅ Content Service — all tests passed."
 
       # -----------------------------------------------------------------------
@@ -162,8 +162,22 @@ jobs:
       - name: "🧪 Pytest — User Service"
         working-directory: streamops/services/user-service
         run: |
-          pytest tests/ -v --tb=short
+          pytest tests/ -v --tb=short --html=report.html --self-contained-html
           echo "✅ User Service — all tests passed."
+
+      # -----------------------------------------------------------------------
+      # STEP 8: UPLOAD ARTIFACTS — HTML Test Reports
+      # -----------------------------------------------------------------------
+      - name: "📤 Upload Test Reports"
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-reports
+          path: |
+            streamops/services/stream-service/report.html
+            streamops/services/content-service/report.html
+            streamops/services/user-service/report.html
+          retention-days: 14
 
   # ===========================================================================
   # JOB 2: BUILD & PUSH — Immutable Artifact Generation
@@ -288,3 +302,36 @@ jobs:
           echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
           echo "kubectl set image deployment/vibesync-api vibesync-api=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+  # ===========================================================================
+  # JOB 3: BUILD FRONTEND — Generate HTML Artifacts
+  # ===========================================================================
+  build-frontend:
+    name: "🌐 Build Frontend — HTML Artifacts"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: "📥 Checkout Repository"
+        uses: actions/checkout@v4
+
+      - name: "⚙️ Set up Node.js"
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: streamops/frontend/package-lock.json
+
+      - name: "📦 Install dependencies"
+        working-directory: streamops/frontend
+        run: npm ci
+
+      - name: "🏗️ Build React App"
+        working-directory: streamops/frontend
+        run: npm run build
+
+      - name: "📤 Upload Frontend Artifact"
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-html-build
+          path: streamops/frontend/dist/
+          retention-days: 14
