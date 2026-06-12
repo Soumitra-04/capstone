@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # =============================================================================
 # VibeSync API — Multi-Stage Production Dockerfile
 # =============================================================================
@@ -55,3 +56,25 @@ USER vibesync
 #   --workers 4       : Multi-process for CPU utilization (adjust per pod CPU limit)
 #   --no-access-log   : Reduce I/O overhead; use structured logging instead
 CMD ["uvicorn", "services.stream-service.app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4", "--no-access-log"]
+=======
+# Stage 1 - Builder
+FROM python:3.11 AS builder
+
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --user -r requirements.txt
+
+# Stage 2 - Runtime
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY --from=builder /root/.local /root/.local
+COPY . .
+
+ENV PATH=/root/.local/bin:$PATH
+
+EXPOSE 8000
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+>>>>>>> 182ad04 (Initial commit)
