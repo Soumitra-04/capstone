@@ -3,16 +3,37 @@ import asyncio
 import httpx
 import time
 import argparse
+import random
+import uuid
 from collections import Counter
 
 # Prevent 'Event loop is closed' errors on Windows
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
+async def background_growth(client):
+    """Slowly grow the database randomly when load test runs."""
+    choice = random.randint(1, 3)
+    base_url = "http://localhost/api"
+    try:
+        if choice == 1:
+            username = f"user_{uuid.uuid4().hex[:8]}"
+            await client.post(f"{base_url}/users/register", json={"username": username, "email": f"{username}@test.com", "password": "pw"})
+        elif choice == 2:
+            game_name = f"Game {uuid.uuid4().hex[:6]}"
+            await client.post(f"{base_url}/games", json={"name": game_name, "description": "Load test game"})
+        elif choice == 3:
+            await client.post(f"{base_url}/streams", json={"streamer_id": f"streamer_{uuid.uuid4().hex[:4]}", "title": f"Live {uuid.uuid4().hex[:4]}!"})
+    except Exception:
+        pass
+
 async def fetch(client, url, semaphore, results):
     """Fetch a single URL and record the result status."""
     async with semaphore:
         try:
+            if random.random() < 0.05:
+                asyncio.create_task(background_growth(client))
+                
             response = await client.get(url)
             results[response.status_code] += 1
         except Exception as e:

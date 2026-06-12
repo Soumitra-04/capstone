@@ -1,51 +1,57 @@
 import { useState, useEffect } from 'react';
+import apiClient from '../api/client';
 import './ServiceHealth.css';
 
+const SERVICES = [
+  { name: 'User Service', key: 'user' },
+  { name: 'Stream Service', key: 'stream' },
+  { name: 'Content Service', key: 'content' },
+];
+
 export function ServiceHealth() {
-  const [healthState, setHealthState] = useState([
-    { name: 'User Service', endpoint: '/api/users', status: 'CHECKING...' },
-    { name: 'Stream Service', endpoint: '/api/streams', status: 'CHECKING...' },
-    { name: 'Content Service', endpoint: '/api/games', status: 'CHECKING...' },
-  ]);
+  const [healthData, setHealthData] = useState([]);
 
   useEffect(() => {
-    const checkHealth = async () => {
-      const updatedHealth = await Promise.all(
-        healthState.map(async (svc) => {
-          try {
-            const res = await fetch(svc.endpoint);
-            return {
-              ...svc,
-              status: res.ok ? 'HEALTHY' : 'OFFLINE'
-            };
-          } catch (err) {
-            return { ...svc, status: 'OFFLINE' };
-          }
-        })
-      );
-      setHealthState(updatedHealth);
+    const fetchHealth = async () => {
+      try {
+        const res = await apiClient.get('/streams/ops/health');
+        if (res.data && res.data.services) {
+          setHealthData(res.data.services);
+        }
+      } catch (error) {
+        console.error('Failed to fetch ops health:', error);
+      }
     };
 
-    checkHealth();
-    const interval = setInterval(checkHealth, 10000);
+    fetchHealth();
+    const interval = setInterval(fetchHealth, 10000);
     return () => clearInterval(interval);
-  }, []); // Run once on mount
+  }, []);
+
+  // Merge the static SERVICES array with dynamic data so the order is maintained,
+  // or just use the data if available. The backend returns exact names.
+  const displayServices = SERVICES.map(svc => {
+    const found = healthData.find(h => h.name === svc.name);
+    return {
+      name: svc.name,
+      status: found ? found.status : 'LOADING...',
+      latency_ms: found ? found.latency_ms : null
+    };
+  });
 
   return (
     <div className="hud-card service-health-card">
       <div className="text-label card-title">SERVICE HEALTH</div>
       
       <div className="service-list">
-        {healthState.map((svc, idx) => (
+        {displayServices.map((svc, idx) => (
           <div key={idx} className="service-row">
             <span className="text-data service-name">{svc.name}</span>
             <div className="service-status">
-              <span className={`text-label status-text ${svc.status === 'HEALTHY' ? 'healthy-text' : svc.status === 'OFFLINE' ? '' : 'checking-text'}`}>
-                {svc.status}
+              <span className={`text-label status-text ${svc.status === 'HEALTHY' ? 'healthy-text' : 'alert-text'}`}>
+                {svc.status} {svc.latency_ms !== null && svc.status === 'HEALTHY' ? `· ${svc.latency_ms}ms` : ''}
               </span>
-              <span className={`status-dot ${svc.status === 'HEALTHY' ? 'healthy' : svc.status === 'OFFLINE' ? 'offline' : 'checking'}`} 
-                    style={svc.status !== 'HEALTHY' ? { backgroundColor: svc.status === 'OFFLINE' ? '#ff3333' : '#888', boxShadow: 'none' } : {}}>
-              </span>
+              <span className={`status-dot ${svc.status.toLowerCase()}`}></span>
             </div>
           </div>
         ))}

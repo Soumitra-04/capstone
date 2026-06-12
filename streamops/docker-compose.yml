@@ -45,7 +45,7 @@ services:
       DATABASE_URL:  postgresql://${POSTGRES_USER:-streamops}:${POSTGRES_PASSWORD}@db:5432/userdb
       SECRET_KEY:    ${SECRET_KEY:?JWT secret required}
       PORT:          8003
-      WORKERS:       2
+      WORKERS:       1
     ports:
       - "8003:8003"
     depends_on:
@@ -69,7 +69,10 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-streamops}:${POSTGRES_PASSWORD}@db:5432/streamdb
       PORT:         8001
-      WORKERS:      2
+      WORKERS:      1
+      APP_VERSION:  "v1.0.0"
+      ENVIRONMENT:  "docker-compose"
+      GIT_SHA:      "local-dev"
     ports:
       - "8001:8001"
     depends_on:
@@ -94,7 +97,7 @@ services:
       DATABASE_URL:      postgresql://${POSTGRES_USER:-streamops}:${POSTGRES_PASSWORD}@db:5432/contentdb
       STREAM_SERVICE_URL: http://stream-service:8001
       PORT:              8002
-      WORKERS:           2
+      WORKERS:           1
     ports:
       - "8002:8002"
     depends_on:

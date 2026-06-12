@@ -1,14 +1,15 @@
 import { LayoutGrid, Cpu, Rocket, ShieldCheck, Clock, FileText, HelpCircle } from 'lucide-react';
+import { NavLink } from 'react-router-dom';
 import './Sidebar.css';
 
 const navItems = [
-  { name: 'OVERVIEW', icon: LayoutGrid, active: true },
-  { name: 'NODES', icon: Cpu, active: false },
-  { name: 'DEPLOYMENTS', icon: Rocket, active: false },
-  { name: 'SECURITY', icon: ShieldCheck, active: false },
-  { name: 'HISTORY', icon: Clock, active: false },
-  { name: 'DOCUMENTATION', icon: FileText, active: false },
-  { name: 'SUPPORT', icon: HelpCircle, active: false },
+  { name: 'OVERVIEW', path: '/', icon: LayoutGrid },
+  { name: 'NODES', path: '/nodes', icon: Cpu },
+  { name: 'DEPLOYMENTS', path: '/deployments', icon: Rocket },
+  { name: 'SECURITY', path: '/security', icon: ShieldCheck },
+  { name: 'HISTORY', path: '/history', icon: Clock },
+  { name: 'DOCUMENTATION', path: '/docs', icon: FileText },
+  { name: 'SUPPORT', path: '/support', icon: HelpCircle },
 ];
 
 export function Sidebar() {
@@ -19,11 +20,17 @@ export function Sidebar() {
       </div>
       
       <nav className="sidebar-nav">
-        <ul>
+        <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
           {navItems.map((item) => (
-            <li key={item.name} className={`nav-item ${item.active ? 'active' : ''}`}>
-              <item.icon className="nav-icon" size={18} />
-              <span className="text-label nav-text">{item.name}</span>
+            <li key={item.name}>
+              <NavLink 
+                to={item.path} 
+                className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+                style={{ textDecoration: 'none' }}
+              >
+                <item.icon className="nav-icon" size={18} />
+                <span className="text-label nav-text">{item.name}</span>
+              </NavLink>
             </li>
           ))}
         </ul>

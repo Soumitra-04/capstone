@@ -1,15 +1,13 @@
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from passlib.context import CryptContext
+import bcrypt
 
 from app.database import get_db
 from app.models import User
 from app.schemas import UserCreate, UserResponse, UserLogin, LoginResponse, HealthResponse
 
 router = APIRouter()
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
 
 @router.get("/health", response_model=HealthResponse)
 def health_check():
@@ -29,7 +27,7 @@ def register_user(user: UserCreate, db: Session = Depends(get_db)):
     db_user = User(
         username=user.username,
         email=user.email,
-        password_hash=pwd_context.hash(user.password),
+        password_hash=bcrypt.hashpw(user.password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8'),
     )
     db.add(db_user)
     db.commit()
@@ -41,7 +39,7 @@ def register_user(user: UserCreate, db: Session = Depends(get_db)):
 def login_user(credentials: UserLogin, db: Session = Depends(get_db)):
     """Login a user and return their id and username."""
     user = db.query(User).filter(User.username == credentials.username).first()
-    if not user or not pwd_context.verify(credentials.password, user.password_hash):
+    if not user or not bcrypt.checkpw(credentials.password.encode('utf-8'), user.password_hash.encode('utf-8')):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     return {"id": user.id, "username": user.username, "message": "Login successful"}
 
