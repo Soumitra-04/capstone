@@ -1,0 +1,20 @@
+# =============================================================================
+# VibeSync — PostgreSQL PersistentVolumeClaim
+# =============================================================================
+# Ensures PostgreSQL data survives pod restarts and rescheduling.
+# Mirrors docker-compose volume: db_data:/var/lib/postgresql/data
+# =============================================================================
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+  namespace: vibesync
+  labels:
+    app.kubernetes.io/part-of: vibesync
+    app.kubernetes.io/component: database
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi

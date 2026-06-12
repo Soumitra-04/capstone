@@ -1,0 +1,13 @@
+# =============================================================================
+# VibeSync — Kubernetes Namespace
+# =============================================================================
+# Isolates all VibeSync workloads from other cluster resources.
+# All subsequent manifests reference namespace: vibesync.
+# =============================================================================
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vibesync
+  labels:
+    app.kubernetes.io/part-of: vibesync
+    app.kubernetes.io/managed-by: kubectl
