@@ -487,10 +487,9 @@ jobs:
       # Dry-run validation: Ensures all manifests parse correctly before
       # applying to the live cluster. Catches YAML syntax errors, missing
       # fields, and invalid API versions.
-      # --validate=false skips OpenAPI schema download, allowing this to run
-      # fully client-side even if KUBECONFIG is missing.
       # -----------------------------------------------------------------------
       - name: "🔍 Validate Manifests (Dry Run)"
+        if: steps.check-kubeconfig.outputs.has_secret == 'true'
         run: |
           echo "Running kubectl dry-run validation..."
           kubectl apply --recursive -f kubernetes/ --dry-run=client --validate=false
