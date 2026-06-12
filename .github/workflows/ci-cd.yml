@@ -455,11 +455,29 @@ jobs:
           echo "✅ All deployment manifests patched."
 
       # -----------------------------------------------------------------------
+      # Check if KUBECONFIG secret is provided. If not, we skip the cluster
+      # deployment steps. This prevents pipeline failures for users testing
+      # with local Minikube who haven't set up GitHub Secrets.
+      # -----------------------------------------------------------------------
+      - name: "☸️ Check for Kubeconfig Secret"
+        id: check-kubeconfig
+        env:
+          KUBECONFIG_SECRET: ${{ secrets.KUBECONFIG }}
+        run: |
+          if [ -z "$KUBECONFIG_SECRET" ]; then
+            echo "No KUBECONFIG secret found. Skipping cluster deployment."
+            echo "has_secret=false" >> $GITHUB_OUTPUT
+          else
+            echo "has_secret=true" >> $GITHUB_OUTPUT
+          fi
+
+      # -----------------------------------------------------------------------
       # Set up kubectl with the cluster kubeconfig from GitHub Secrets.
       # For local Minikube testing, skip this job and run manually:
       #   kubectl apply --recursive -f kubernetes/
       # -----------------------------------------------------------------------
       - name: "☸️ Set up Kubeconfig"
+        if: steps.check-kubeconfig.outputs.has_secret == 'true'
         run: |
           mkdir -p $HOME/.kube
           echo "${{ secrets.KUBECONFIG }}" | base64 -d > $HOME/.kube/config
@@ -469,14 +487,17 @@ jobs:
       # Dry-run validation: Ensures all manifests parse correctly before
       # applying to the live cluster. Catches YAML syntax errors, missing
       # fields, and invalid API versions.
+      # --validate=false skips OpenAPI schema download, allowing this to run
+      # fully client-side even if KUBECONFIG is missing.
       # -----------------------------------------------------------------------
       - name: "🔍 Validate Manifests (Dry Run)"
         run: |
           echo "Running kubectl dry-run validation..."
-          kubectl apply --recursive -f kubernetes/ --dry-run=client
+          kubectl apply --recursive -f kubernetes/ --dry-run=client --validate=false
           echo "✅ All manifests validated successfully."
 
       - name: "🚀 Apply Kubernetes Manifests"
+        if: steps.check-kubeconfig.outputs.has_secret == 'true'
         run: |
           kubectl apply --recursive -f kubernetes/
           echo "✅ All manifests applied."
@@ -487,6 +508,7 @@ jobs:
       # crash loop, failed health check).
       # -----------------------------------------------------------------------
       - name: "⏳ Verify Rollout Status"
+        if: steps.check-kubeconfig.outputs.has_secret == 'true'
         run: |
           echo "::group::PostgreSQL Rollout"
           kubectl rollout status deployment/postgres -n vibesync --timeout=120s
@@ -512,17 +534,28 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Deployment | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| postgres | ✅ Rolled out |" >> $GITHUB_STEP_SUMMARY
-          echo "| stream-service | ✅ Rolled out |" >> $GITHUB_STEP_SUMMARY
-          echo "| user-service | ✅ Rolled out |" >> $GITHUB_STEP_SUMMARY
-          echo "| content-service | ✅ Rolled out |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Rollback Commands" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-          echo "kubectl rollout undo deployment/stream-service -n vibesync" >> $GITHUB_STEP_SUMMARY
-          echo "kubectl rollout undo deployment/user-service -n vibesync" >> $GITHUB_STEP_SUMMARY
-          echo "kubectl rollout undo deployment/content-service -n vibesync" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.check-kubeconfig.outputs.has_secret }}" == 'true' ]; then
+            echo "| postgres | ✅ Rolled out |" >> $GITHUB_STEP_SUMMARY
+            echo "| stream-service | ✅ Rolled out |" >> $GITHUB_STEP_SUMMARY
+            echo "| user-service | ✅ Rolled out |" >> $GITHUB_STEP_SUMMARY
+            echo "| content-service | ✅ Rolled out |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Rollback Commands" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+            echo "kubectl rollout undo deployment/stream-service -n vibesync" >> $GITHUB_STEP_SUMMARY
+            echo "kubectl rollout undo deployment/user-service -n vibesync" >> $GITHUB_STEP_SUMMARY
+            echo "kubectl rollout undo deployment/content-service -n vibesync" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| All Deployments | ⚠️ Skipped (No KUBECONFIG secret) |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Manual Deployment Required" >> $GITHUB_STEP_SUMMARY
+            echo "No \`KUBECONFIG\` secret was found in GitHub, so the cluster deployment was skipped." >> $GITHUB_STEP_SUMMARY
+            echo "To deploy manually (e.g., using Minikube):" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+            echo "kubectl apply --recursive -f kubernetes/" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          fi
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Manual Dry-Run Validation" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
