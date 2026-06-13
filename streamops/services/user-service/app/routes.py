@@ -2,6 +2,10 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 import bcrypt
+import logging
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
 
 from app.database import get_db
 from app.models import User
@@ -22,6 +26,7 @@ def register_user(user: UserCreate, db: Session = Depends(get_db)):
         (User.username == user.username) | (User.email == user.email)
     ).first()
     if existing:
+        logger.warning(f"Registration failed: username {user.username} or email {user.email} already exists")
         raise HTTPException(status_code=400, detail="Username or email already exists")
 
     db_user = User(
@@ -32,6 +37,7 @@ def register_user(user: UserCreate, db: Session = Depends(get_db)):
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
+    logger.info(f"User {db_user.username} successfully registered with id {db_user.id}")
     return db_user
 
 
@@ -40,7 +46,9 @@ def login_user(credentials: UserLogin, db: Session = Depends(get_db)):
     """Login a user and return their id and username."""
     user = db.query(User).filter(User.username == credentials.username).first()
     if not user or not bcrypt.checkpw(credentials.password.encode('utf-8'), user.password_hash.encode('utf-8')):
+        logger.warning(f"Failed login attempt for username: {credentials.username}")
         raise HTTPException(status_code=401, detail="Invalid credentials")
+    logger.info(f"User {user.username} successfully logged in")
     return {"id": user.id, "username": user.username, "message": "Login successful"}
 
 

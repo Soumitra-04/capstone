@@ -14,7 +14,7 @@ if sys.platform == 'win32':
 async def background_growth(client):
     """Slowly grow the database randomly when load test runs."""
     choice = random.randint(1, 3)
-    base_url = "http://localhost/api"
+    base_url = "http://localhost:5174/api"
     try:
         if choice == 1:
             username = f"user_{uuid.uuid4().hex[:8]}"
@@ -75,7 +75,7 @@ async def hammer(url, count=100, concurrency=20):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Async Load Tester")
-    parser.add_argument("--url", type=str, default="http://localhost:8001/health", help="Target URL")
+    parser.add_argument("--url", type=str, default="http://localhost:8001/streams", help="Target URL")
     parser.add_argument("-c", "--count", type=int, default=500, help="Total number of requests to send")
     parser.add_argument("-n", "--concurrency", type=int, default=50, help="Maximum number of concurrent requests")
     

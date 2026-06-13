@@ -6,6 +6,10 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST, REGISTRY
+import logging
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
 
 from app.database import get_db
 from app.models import Stream, StreamMetric
@@ -69,10 +73,12 @@ def create_stream(stream: StreamCreate, db: Session = Depends(get_db)):
         record_metric(db, db_stream.id, elapsed)
         REQUEST_COUNT.labels("POST", "/streams", "201").inc()
         REQUEST_DURATION.labels("POST", "/streams").observe(elapsed / 1000)
+        logger.info(f"Stream '{db_stream.title}' created successfully by streamer {db_stream.streamer_id}")
         return db_stream
     except Exception as e:
         elapsed = (time.time() - start) * 1000
         REQUEST_COUNT.labels("POST", "/streams", "500").inc()
+        logger.error(f"Error creating stream: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -119,6 +125,7 @@ def update_viewers(stream_id: str, update: ViewerUpdate, db: Session = Depends(g
     stream = db.query(Stream).filter(Stream.id == stream_id).first()
     if not stream:
         REQUEST_COUNT.labels("PATCH", "/streams/{id}/viewers", "404").inc()
+        logger.warning(f"Failed to update viewers: Stream {stream_id} not found")
         raise HTTPException(status_code=404, detail="Stream not found")
     stream.viewer_count = update.viewer_count
     db.commit()
@@ -138,6 +145,7 @@ def end_stream(stream_id: str, db: Session = Depends(get_db)):
     stream = db.query(Stream).filter(Stream.id == stream_id).first()
     if not stream:
         REQUEST_COUNT.labels("DELETE", "/streams/{id}", "404").inc()
+        logger.warning(f"Failed to end stream: Stream {stream_id} not found")
         raise HTTPException(status_code=404, detail="Stream not found")
     stream.is_live = False
     stream.ended_at = datetime.now(timezone.utc)
@@ -148,6 +156,7 @@ def end_stream(stream_id: str, db: Session = Depends(get_db)):
     record_metric(db, stream.id, elapsed)
     REQUEST_COUNT.labels("DELETE", "/streams/{id}", "200").inc()
     REQUEST_DURATION.labels("DELETE", "/streams/{id}").observe(elapsed / 1000)
+    logger.info(f"Stream {stream_id} ended successfully")
     return stream
 
 

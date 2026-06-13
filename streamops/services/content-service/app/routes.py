@@ -6,6 +6,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 import httpx
+import logging
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
 
 from app.database import get_db
 from app.models import Game, Recommendation
@@ -38,6 +42,7 @@ def create_game(game: GameCreate, db: Session = Depends(get_db)):
     existing = db.query(Game).filter(Game.name == game.name).first()
     if existing:
         REQUEST_COUNT.labels("POST", "/games", "400").inc()
+        logger.warning(f"Failed to create game: Game '{game.name}' already exists")
         raise HTTPException(status_code=400, detail="Game already exists")
 
     db_game = Game(name=game.name, description=game.description)
@@ -47,6 +52,7 @@ def create_game(game: GameCreate, db: Session = Depends(get_db)):
     elapsed = (time.time() - start) * 1000
     REQUEST_COUNT.labels("POST", "/games", "201").inc()
     REQUEST_DURATION.labels("POST", "/games").observe(elapsed / 1000)
+    logger.info(f"Successfully created game '{db_game.name}' with id {db_game.id}")
     return db_game
 
 
@@ -90,7 +96,8 @@ def get_game_streams(game_id: str, db: Session = Depends(get_db)):
                 game_streams = [s for s in all_streams if s.get("game_id") == game_id]
                 return {"game": game.name, "streams": game_streams}
             return {"game": game.name, "streams": [], "error": "Stream service returned non-200"}
-    except httpx.RequestError:
+    except httpx.RequestError as e:
+        logger.error(f"Error calling stream-service for game {game_id}: {e}", exc_info=True)
         return {"game": game.name, "streams": [], "error": "Stream service unavailable"}
 
 
